@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Awesome Scratch</title>
+    <link rel="stylesheet" href="./css/index.css">
+</head>
+
+<script src="./script/babyfsJsbridge.min.js"></script>
+<script src="./script/axios.min.js"></script>
+<script src="./script/scratch-storage.min.js"></script>
+<script src="./script/scratch-audio.js"></script>
+<script src="./script/vconsole.min.js"></script>
+<script src="./script/scratch-vm.min.js"></script>
+<script src="./script/util.js"></script>
+
+<body>
+    <!-- loading -->
+    <div id='j_page-loading' class='m-actloading' style='background-color:rgba(4, 18, 34, 1)'>
+        <div class='loading' style='color:rgba(255, 255, 255, 1)'>
+            <div class='bars'>
+                <span class='loading-bar b1' style='background-color:rgba(255, 255, 255, 1)'></span>
+                <span class='loading-bar b2' style='background-color:rgba(255, 255, 255, 1)'></span>
+                <span class='loading-bar b3' style='background-color:rgba(255, 255, 255, 1)'></span>
+                <span class='loading-bar b4' style='background-color:rgba(255, 255, 255, 1)'></span>
+                <span class='loading-bar b5' style='background-color:rgba(255, 255, 255, 1)'></span>
+                <span class='loading-bar b6' style='background-color:rgba(255, 255, 255, 1)'></span>
+                <span class='loading-bar b7' style='background-color:rgba(255, 255, 255, 1)'></span>
+            </div>
+            <span class='loading-tip'>loading<i class='dots d1'>.</i><i class='dots d2'>.</i><i class='dots d3'>.</i></span>
+        </div>
+    </div>
+    <!-- canvas -->
+    <canvas id="ocanvas"></canvas>
+    <!-- render 引擎 -->
+    <script src="./script/scratch-svg-renderer.js"></script>
+    <script src="./script/scratch-render.min.js"></script>
+
+    <div id="debug-area">
+        <!-- 上传文件 -->
+        <input type="file" id="file" name="file" style="display: none;">
+        <label id="file-label" for="file">Select other files from filesystem</label>
+        <!-- 选择文件 -->
+        <a class=dropdown>Select other files from local
+            <select id="select">
+                <option>
+                <option value=0>Icanhelp.sb3
+                <option value=1>Party dodge! (contest entry) (1)
+                <option value=2>Programmable Drum Kit (1)
+                <option value=3>DIY Gobo Plush ★ Scratch Day 2019
+                <option value=4>Summer Waves _ Spiral(2)
+                <option value=5>iphonex
+            </select>
+        </a>
+        <!-- 屏幕信息 -->
+        <div id="detec">
+            <p id="J_detectRes"></p>
+            <p id="J_detectData"></p>
+            <p id="J_detectWH"></p>
+        </div>
+    </div>
+
+    <script>
+        "use strict";
+        const bridge = window['babyfs-jsbridge'].default;
+        bridge.callHandler('setScreenHoriz');
+        window.__bbfs_scratch = {}; // 适应业务的全局实例
+        window.__bbfs_scratch['debug'] = false;
+        // debug 开关
+        function switchDebug() {
+            const debugDom = document.getElementById('debug-area');
+            if (window.__bbfs_scratch['debug']) {
+                debugDom.style.display = 'block';
+            } else {
+                debugDom.style.display = 'none';
+            }
+            const vConsole = new VConsole(); // debug vconsole init
+        }
+        switchDebug();
+
+        window.devicePixelRatio = 3;
+        detectOrient(); // 监测屏幕方向
+        window.onresize = debounce(detectOrient, 300);
+        const loading = document.getElementById('j_page-loading');
+        // loading显示隐藏开关切换
+        function switchLoading(_sw) {
+            if (_sw) {
+                loading.style.display = 'block';
+            } else {
+                loading.style.display = 'none';
+            }
+        }
+        // 切换项目前
+        function beforeSwitchProject() {
+            switchLoading(true);
+            vm.stopAll();
+            vm.clear();
+        }
+        // 切换项目后
+        function afterSwitchProject() {
+            switchLoading(false);
+            vm.greenFlag(); // 执行程序
+        }
+        switchLoading(true);
+        const canvas = document.getElementById('ocanvas');
+        const oSel = document.getElementById('select');
+        const oFile = document.getElementById('file');
+        const dragThreshold = 3;
+        const state = {
+            mouseDown: false,
+            mouseDownTimeoutId: null,
+            mouseDownPosition: null,
+            isDragging: false,
+            dragOffset: null,
+            dragId: null
+        };
+        const render = new ScratchRender(canvas);
+        const vm = new VirtualMachine();
+        const storage = new ScratchStorage();
+        const audioEngine = new AudioEngine();
+        resizeCanvas(__bbfs_scratch['canvasW'], __bbfs_scratch['canvasH'])
+        vm.attachStorage(storage);
+        vm.attachRenderer(render);
+        vm.attachAudioEngine(audioEngine);
+        vm.attachV2SVGAdapter(new ScratchSVGRenderer.SVGRenderer());
+        vm.attachV2BitmapAdapter(new ScratchSVGRenderer.BitmapAdapter());
+
+        oSel.onchange = function () {
+            let filename = ''
+            const value = oSel.options[oSel.selectedIndex].value;
+            switch (Number(value)) {
+                case 0:
+                    filename = 'Icanhelp'
+                    break;
+                case 1:
+                    filename = 'Party dodge! (contest entry) (1)'
+                    break;
+                case 2:
+                    filename = 'Programmable Drum Kit (1)'
+                    break;
+                case 3:
+                    filename = 'DIY Gobo Plush ★ Scratch Day 2019'
+                    break;
+                case 4:
+                    filename = 'Summer Waves _ Spiral(2)'
+                    break;
+                case 5:
+                    filename = 'iphonex'
+                    break;
+
+            }
+            const path = `./sb3/${filename}.sb3`
+            fetchScratchFile(path)
+        };
+
+        oFile.addEventListener('change', e => {
+            readFromSb(e.target.files[0])
+        });
+
+        // 绑定鼠标事件
+        function attachMouseEvents(canvas) {
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+            document.addEventListener('touchmove', onMouseMove);
+            document.addEventListener('touchend', onMouseUp);
+            canvas.addEventListener('mousedown', onMouseDown);
+            canvas.addEventListener('touchstart', onMouseDown);
+        }
+
+        function onMouseMove(e) {
+            const { x, y } = getEventXY(e);
+            const rect = canvas.getBoundingClientRect();
+            const mousePosition = [x - rect.left, y - rect.top];
+
+            if (state.mouseDown && !state.isDragging) {
+                const distanceFromMouseDown = Math.sqrt(
+                    Math.pow(mousePosition[0] - state.mouseDownPosition[0], 2) +
+                    Math.pow(mousePosition[1] - state.mouseDownPosition[1], 2)
+                );
+                if (distanceFromMouseDown > dragThreshold) {
+                    cancelMouseDownTimeout();
+                    onStartDrag(...state.mouseDownPosition);
+                }
+            }
+
+            if (state.mouseDown && state.isDragging) {
+                // Editor drag style only updates the drag canvas, does full update at the end of drag
+                // Non-editor drag style just updates the sprite continuously.
+                const spritePosition = getScratchCoords(mousePosition[0], mousePosition[1]);
+                vm.postSpriteInfo({
+                    x: spritePosition[0] + state.dragOffset[0],
+                    y: -(spritePosition[1] + state.dragOffset[1]),
+                    force: true
+                });
+            }
+            const coordinates = {
+                x: mousePosition[0],
+                y: mousePosition[1],
+                canvasWidth: rect.width,
+                canvasHeight: rect.height
+            };
+            vm.postIOData('mouse', coordinates);
+        }
+
+        function onMouseUp(e) {
+            const { x, y } = getEventXY(e);
+            const rect = canvas.getBoundingClientRect();
+            const mousePosition = [x - rect.left, y - rect.top];
+            cancelMouseDownTimeout();
+            state['mouseDown'] = false;
+            state['mouseDownPosition'] = null;
+            const data = {
+                isDown: false,
+                x: mousePosition[0],
+                y: mousePosition[1],
+                canvasWidth: rect.width,
+                canvasHeight: rect.height,
+                wasDragged: state.isDragging
+            };
+            if (state.isDragging) {
+                onStopDrag(mousePosition[0], mousePosition[1]);
+            }
+            vm.postIOData('mouse', data);
+        }
+
+        function onMouseDown(e) {
+            const { x, y } = getEventXY(e);
+            const rect = canvas.getBoundingClientRect();
+            const mousePosition = [x - rect.left, y - rect.top];
+            if (e.button === 0 || (window.TouchEvent && e instanceof TouchEvent)) {
+                state['mouseDown'] = true;
+                state['mouseDownPosition'] = mousePosition;
+                // state['mouseDownTimeoutId'] = setTimeout(onStartDrag(mousePosition[0], mousePosition[1]), 400)
+            }
+            const data = {
+                isDown: true,
+                x: mousePosition[0],
+                y: mousePosition[1],
+                canvasWidth: rect.width,
+                canvasHeight: rect.height
+            };
+
+            vm.postIOData('mouse', data);
+            if (e.preventDefault) {
+                // Prevent default to prevent touch from dragging page
+                e.preventDefault();
+                // But we do want any active input to be blurred
+                if (document.activeElement && document.activeElement.blur) {
+                    document.activeElement.blur();
+                }
+            }
+        }
+
+        function cancelMouseDownTimeout() {
+            if (state.mouseDownTimeoutId !== null) {
+                clearTimeout(state.mouseDownTimeoutId);
+            }
+            state['mouseDownTimeoutId'] = null;
+        }
+
+        function onStartDrag(x, y) {
+            if (state.dragId) return;
+            const drawableId = render.pick(x, y);
+            if (drawableId === null) return;
+            const targetId = vm.getTargetIdForDrawableId(drawableId);
+            if (targetId === null) return;
+
+            const target = vm.runtime.getTargetById(targetId);
+
+            // Do not start drag unless in editor drag mode or target is draggable
+            if (!target.draggable) return;
+
+            // Dragging always brings the target to the front
+            target.goToFront();
+
+            // Extract the drawable art
+            const drawableData = render.extractDrawable(drawableId, x, y);
+
+            vm.startDrag(targetId);
+
+            state['isDragging'] = true;
+            state['dragId'] = targetId;
+            state['dragOffset'] = drawableData.scratchOffset;
+        }
+
+        function onStopDrag(mouseX, mouseY) {
+            const dragId = state.dragId;
+            const commonStopDragActions = () => {
+                vm.stopDrag(dragId);
+                state['isDragging'] = false;
+                state['dragOffset'] = null;
+                state['dragId'] = null;
+            };
+            commonStopDragActions();
+        }
+
+        function getScratchCoords(x, y) {
+            const nativeSize = render.getNativeSize();
+            const rect = canvas.getBoundingClientRect();
+            return [
+                (nativeSize[0] / rect.width) * (x - (rect.width / 2)),
+                (nativeSize[1] / rect.height) * (y - (rect.height / 2))
+            ];
+        }
+
+        // 本地读取sb*文件(sb3)
+        function readFromSb(targert) {
+            const reader = new FileReader();
+            reader.onload = () => {
+                vm.start();
+                vm.setCompatibilityMode(false);
+                vm.setTurboMode(false);
+                vm.loadProject(reader.result)
+                    .then(() => {
+                        afterSwitchProject();
+                    });
+            };
+            reader.readAsArrayBuffer(targert);
+        }
+
+        // fetch scratch files(sb3)
+        function fetchScratchFile(fileName = getQueryString('file')) {
+            console.log('[current sb3 path is: ]', fileName);
+            const path = fileName;
+            if (path) {
+                beforeSwitchProject();
+                axios.get(path, {
+                    responseType: 'blob'
+                })
+                    .then((res) => {
+                        console.log(res);
+                        readFromSb(res.data)
+                    })
+            }
+        }
+
+        attachMouseEvents(canvas);
+        // fetchScratchFile();
+        const path = `https://scstatic.wecode123.com//code/FREESTYLE_13320200422163952.sb3`
+        fetchScratchFile(path);
+
+    </script>
+</body>
+
+</html>

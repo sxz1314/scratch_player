@@ -1,0 +1,3 @@
+#scratch_player
+index.html经过二次改造 包含移动端模拟键盘事件
+player.html是demo文件
